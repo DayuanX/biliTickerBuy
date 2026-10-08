@@ -69,7 +69,8 @@ def test_defaults_when_nothing_set(monkeypatch):
 
     config = _assemble(["buy"])
 
-    assert config.interval == 1000
+    assert config.interval == 300
+    assert config.create_retry_limit == 100
     assert config.notifier_config.ntfy_url == ""
     assert config.https_proxys == "none"
     assert config.log_level == "standard"

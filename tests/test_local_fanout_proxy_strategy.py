@@ -1,4 +1,6 @@
 from typing import Any
+from urllib.parse import unquote
+from threading import Barrier
 
 import httpx
 
@@ -76,6 +78,7 @@ class FakeH2Client(AbstractH2Client):
 
 class FakeH2Connection:
     instances: list["FakeH2Connection"] = []
+    post_barrier = None
     post_bodies_by_proxy: dict[str, list[bytes]] = {}
     post_errors_by_proxy: dict[str, list[Exception]] = {}
     post_responses_by_proxy: dict[str, list[tuple[int, bytes]]] = {}
@@ -110,6 +113,8 @@ class FakeH2Connection:
 
     def post(self, url: str, headers=None, content=None) -> H2Response:
         self.calls.append(("POST", url))
+        if self.post_barrier is not None:
+            self.post_barrier.wait(timeout=3)
         errors = self.post_errors_by_proxy.get(self.proxy_url or "", [])
         if errors:
             raise errors.pop(0)
@@ -200,7 +205,8 @@ def test_h2_client_constructor_uses_abstract_client_interface():
         ("SESSDATA", "abc", ".bilibili.com"),
         ("SESSDATA", "abc", ".bilibili.com"),
     ]
-    assert client.calls == [
+    normalized_calls = [(call[0], unquote(call[1]), *call[2:]) for call in client.calls]
+    assert normalized_calls == [
         ("head", url),
         ("post", url, None, {"project_id": 1}),
         ("get", url, {"project_id": 1}),
@@ -272,7 +278,8 @@ def test_replace_proxy_pool_updates_h2_client_options():
     ]
 
 
-def test_proxy_pool_fanout_builds_one_create_connection_per_proxy():
+def test_proxy_pool_fanout_builds_one_create_connection_per_proxy(monkeypatch):
+    monkeypatch.setattr(FakeH2Connection, "post_barrier", Barrier(2))
     FakeH2Connection.instances = []
     FakeH2Connection.post_bodies_by_proxy = {}
     FakeH2Connection.post_errors_by_proxy = {}
@@ -305,7 +312,8 @@ def test_proxy_pool_fanout_builds_one_create_connection_per_proxy():
     ]
 
 
-def test_proxy_pool_fanout_can_use_direct_single_source():
+def test_proxy_pool_fanout_can_use_direct_single_source(monkeypatch):
+    monkeypatch.setattr(FakeH2Connection, "post_barrier", Barrier(2))
     FakeH2Connection.instances = []
     FakeH2Connection.post_bodies_by_proxy = {}
     FakeH2Connection.post_errors_by_proxy = {}
@@ -334,7 +342,8 @@ def test_proxy_pool_fanout_can_use_direct_single_source():
     assert {instance.proxy_url for instance in business_connections} == {None}
 
 
-def test_proxy_pool_fanout_detects_percent_encoded_create_v2_path():
+def test_proxy_pool_fanout_detects_percent_encoded_create_v2_path(monkeypatch):
+    monkeypatch.setattr(FakeH2Connection, "post_barrier", Barrier(2))
     FakeH2Connection.instances = []
     FakeH2Connection.post_bodies_by_proxy = {}
     FakeH2Connection.post_errors_by_proxy = {}

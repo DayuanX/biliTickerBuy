@@ -224,13 +224,25 @@ class BiliRequest:
 
     @staticmethod
     def _random_quote(path: str) -> str:
-        return "".join(random.choice([c, f"%{ord(c):02x}"]) for c in path)
+        return "".join(
+            c if c == "/" else random.choice([c, f"%{ord(c):02x}"]) for c in path
+        )
+
+    @staticmethod
+    def _should_randomize_h2_path(url: str) -> bool:
+        import urllib.parse
+
+        parsed_url = urllib.parse.urlparse(url)
+        path = urllib.parse.unquote(parsed_url.path).lower()
+        return (
+            parsed_url.hostname or ""
+        ).lower() == "show.bilibili.com" and "createv2" in path
 
     def _h2_send(self, method: str, url: str, data=None, isJson=False):
         parsed_url = urllib.parse.urlparse(url)
 
-        if "createV2" in parsed_url.path:
-            new_path = BiliRequest._random_quote(parsed_url.path)
+        if self._should_randomize_h2_path(url):
+            new_path = BiliRequest._random_quote(urllib.parse.unquote(parsed_url.path))
             url = urllib.parse.urlunparse(parsed_url._replace(path=new_path))
 
         if self._h2_client is None:

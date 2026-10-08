@@ -33,8 +33,24 @@ def go_settings_tab(header_ui):
         "balanced",
         "queue",
         "local_fanout",
+        "local_ipv6",
     }:
         proxy_assignment_strategy_default = "balanced"
+
+    def test_ipv6_alias_connectivity(interface_name, timeout):
+        try:
+            from util.h2client.IPv6AliasTester import test_ipv6_alias_connectivity
+
+            interface_name = str(interface_name or "").strip()
+            result = test_ipv6_alias_connectivity(interface_name, int(timeout))
+            return gr.update(value=result, visible=True)
+        except Exception as e:
+            return gr.update(value=f"❌ 测试过程中发生错误: {str(e)}", visible=True)
+
+    def show_ipv6_alias_test_loading():
+        return gr.update(
+            value="正在测试 Wi-Fi IPv6 alias 出口，请稍候...", visible=True
+        )
 
     def _split_proxy_lines(proxy_text: str | None) -> list[str]:
         if not proxy_text:
@@ -500,6 +516,39 @@ def go_settings_tab(header_ui):
                         placeholder="点击上方按钮开始测试代理连通性...",
                         visible=False,
                     )
+                    gr.Markdown("### 测试 Wi-Fi IPv6 alias 出口")
+                    gr.Markdown(
+                        "逐个测试脚本添加的 IPv6 地址，显示外部服务看到的地址。"
+                    )
+                    with gr.Row(elem_classes="btb-inline-actions !items-end"):
+                        ipv6_alias_interface_ui = gr.Textbox(
+                            label="Wi-Fi 网卡",
+                            value="",
+                            placeholder="留空测试全部已记录网卡",
+                            scale=2,
+                        )
+                        ipv6_alias_timeout_ui = gr.Number(
+                            label="测试超时时间(秒)",
+                            value=10,
+                            minimum=5,
+                            maximum=60,
+                            step=1,
+                            scale=1,
+                        )
+                        test_ipv6_alias_btn = gr.Button(
+                            "测试 IPv6 alias 出口",
+                            elem_classes="btb-soft-button",
+                            scale=0,
+                            min_width=220,
+                        )
+                    ipv6_alias_result_ui = gr.Textbox(
+                        label="IPv6 alias 出口测试结果",
+                        lines=10,
+                        max_lines=15,
+                        interactive=False,
+                        placeholder="点击上方按钮测试状态文件中记录的 IPv6 alias...",
+                        visible=False,
+                    )
                     gr.Markdown("### 通过代理 API 获取")
                     proxy_api_url_ui = gr.Textbox(
                         label="代理 API 地址",
@@ -581,15 +630,17 @@ def go_settings_tab(header_ui):
                           <p><strong>均匀分配模式：</strong>程序会尽量把代理均匀分配给所有抢票任务。适合代理数量较多的情况。但是如果你配置的代理数目不够多，同一个代理在运行过程中可能会被多个程序使用。</p>
                           <p><strong>队列模式：</strong>程序会将代理作为队列资源分配给抢票任务，尽量保证同一时间内每个正在运行的任务使用不同的代理。如果抢票任务数为 n，代理数量为 m：当 n &lt;= m 时，每个抢票任务都会分配到不同的代理；当 n &gt; m 时，最多同时运行 m 个抢票任务，未分配到代理的任务会进入等待队列，等前面的任务结束后再继续执行。这种模式适合希望同一时间内每个任务尽量使用不同 IP，并避免多个任务共用同一个代理的场景。</p>
                           <p><strong>代理池并发：</strong>每个任务都会拿到完整出口池，并在关键 create 请求上通过多个出口同时尝试，谁先返回有效结果就优先使用。未配置代理且允许直连时，会使用直连作为单一出口，并按同代理并行数量建立多条 H2 连接。</p>
+                          <p><strong>本机多 IP：</strong>使用所选网卡上的多个地址同时发送购票请求。macOS 可配合 IPv6 地址脚本使用。</p>
                         </div>
                         """
                     )
                     proxy_assignment_strategy_ui = gr.Dropdown(
-                        label="任务代理分配策略",
+                        label="连接与任务分配方式",
                         choices=[
                             ("均匀分配", "balanced"),
                             ("队列模式", "queue"),
                             ("代理池并发", "local_fanout"),
+                            ("本机多 IP", "local_ipv6"),
                         ],
                         value=proxy_assignment_strategy_default,
                         interactive=True,
@@ -600,7 +651,7 @@ def go_settings_tab(header_ui):
                     proxy_include_direct_ui = gr.Checkbox(
                         label="允许使用直连（none）",
                         value=ConfigDB.get_as_bool("proxyIncludeDirect", True),
-                        info="开启后，任务代理分配会把直连作为一个可用出口；关闭后，所有任务只使用已配置代理。",
+                        info="用于均匀分配、队列和代理池并发模式。本机多 IP 模式直接使用本地地址。",
                     )
                     queue_concurrency_limit_ui = gr.Number(
                         label="队列并发上限（仅队列模式）",
@@ -610,11 +661,11 @@ def go_settings_tab(header_ui):
                         info="填 0 表示等于代理数量。",
                     )
                     h2_connections_per_source_ip_ui = gr.Number(
-                        label="抢票并行数",
+                        label="每个地址的连接数",
                         value=buy_defaults.h2_connections_per_source_ip,
                         minimum=1,
                         step=1,
-                        info="同代理并行数量。代理池并发模式下，每个代理或直连出口会同时建立的 H2 连接数。",
+                        info="代理池并发或本机多 IP 模式下，每个地址建立的连接数。",
                     )
 
             with gr.Tab("音乐"):
@@ -647,7 +698,7 @@ def go_settings_tab(header_ui):
                         """
                         🗨️ **抢票成功提醒**
 
-                        > 你需要去对应的网站获取 key 或 token，然后填入下面的输入框  
+                        > 你需要去对应的网站获取 key 或 token，然后填入下面的输入框
                         > [Server酱<sup>Turbo</sup>](https://sct.ftqq.com/sendkey) | [pushplus](https://www.pushplus.plus/uc.html) | [Server酱<sup>3</sup>](https://sc3.ft07.com/sendkey) | [ntfy](https://ntfy.sh/) | [Bark](https://bark.day.app/) | MeoW | [Telegram](https://t.me/BotFather)
                         > 留空以不启用提醒功能
 
@@ -1039,6 +1090,15 @@ def go_settings_tab(header_ui):
         inputs=auto_open_payment_url_ui,
         outputs=auto_open_payment_url_ui,
     )
+    test_ipv6_alias_btn.click(
+        fn=show_ipv6_alias_test_loading,
+        outputs=ipv6_alias_result_ui,
+    ).then(
+        fn=test_ipv6_alias_connectivity,
+        inputs=[ipv6_alias_interface_ui, ipv6_alias_timeout_ui],
+        outputs=ipv6_alias_result_ui,
+    )
+
     proxy_assignment_strategy_ui.change(
         fn=update_proxy_assignment_strategy,
         inputs=proxy_assignment_strategy_ui,

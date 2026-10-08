@@ -322,12 +322,22 @@ def go_start_tab():
         ConfigDB.insert("requestInterval", interval)
 
         https_proxys = ConfigDB.get("https_proxy") or ""
+        proxy_assignment_strategy = str(
+            ConfigDB.get("proxyAssignmentStrategy") or "balanced"
+        ).lower()
+        if proxy_assignment_strategy not in {
+            "balanced",
+            "queue",
+            "local_fanout",
+            "local_ipv6",
+        }:
+            proxy_assignment_strategy = "balanced"
         include_direct_proxy = ConfigDB.get_as_bool("proxyIncludeDirect", True)
         https_proxy_list = _build_task_proxy_list(
             https_proxys,
             include_direct=include_direct_proxy,
         )
-        if not https_proxy_list:
+        if not https_proxy_list and proxy_assignment_strategy != "local_ipv6":
             gr.Warning("已关闭直连，请至少配置一个代理。")
             return gr.update(visible=False)
         assigned_proxies: list[list[str]] = []
@@ -337,11 +347,6 @@ def go_start_tab():
             time_start=time_start,
             interval=interval,
         )
-        proxy_assignment_strategy = str(
-            ConfigDB.get("proxyAssignmentStrategy") or "balanced"
-        ).lower()
-        if proxy_assignment_strategy not in {"balanced", "queue", "local_fanout"}:
-            proxy_assignment_strategy = "balanced"
         queue_concurrency_limit = ConfigDB.get_as_int("queueConcurrencyLimit", 0)
         log_retention_days = buy_config.log_retention_days
         auto_cleanup_logs = ConfigDB.get("autoCleanupLogs")
@@ -390,6 +395,18 @@ def go_start_tab():
                     daemon=True,
                 ).start()
             gr.Info("抢票任务已按队列模式启动。")
+            return gr.update(visible=True)
+
+        if proxy_assignment_strategy == "local_ipv6":
+            for filename in files:
+                launch_task(
+                    filename,
+                    config=buy_config.with_overrides(
+                        https_proxys="none",
+                        create_request_proxy_strategy="local_ipv6",
+                    ),
+                )
+            gr.Info("抢票任务已使用本机多 IP 启动。")
             return gr.update(visible=True)
 
         if proxy_assignment_strategy == "local_fanout":

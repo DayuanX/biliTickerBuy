@@ -12,7 +12,7 @@ from app_cmd.config.ConfigBasic import (
     str_to_bool,
 )
 from app_cmd.config.NotifierConfig import NotifierConfig
-from util.Constant import DEFAULT_RATE_LIMIT_DELAY_MS
+from util.Constant import DEFAULT_RATE_LIMIT_DELAY_MS, DEFAULT_REQUEST_INTERVAL
 from util.h2client.constants import H2CLIENT_CONNECTIONS_PER_SOURCE_IP
 
 
@@ -40,7 +40,7 @@ class BuyConfig(BasicConfig):
     """Scheduled start time, for example 2026-06-18T20:00:00."""
 
     interval: int | None = config_field(
-        1000,
+        DEFAULT_REQUEST_INTERVAL,
         env="BTB_INTERVAL",
         runtime="interval",
         db="requestInterval",
@@ -148,7 +148,7 @@ class BuyConfig(BasicConfig):
         cli="--create-request-proxy-strategy",
         cast=lambda value: str(value or "standard").lower(),
     )
-    """Internal create-order request transport strategy."""
+    """Connection mode: standard, local_fanout (proxies), or local_ipv6 (local IPs)."""
 
     h2_connections_per_source_ip: int = config_field(
         H2CLIENT_CONNECTIONS_PER_SOURCE_IP,

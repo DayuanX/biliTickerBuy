@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from util.Constant import DEFAULT_REQUEST_INTERVAL
+from app_cmd.config.ConfigBasic import DEFAULT_CREATE_RETRY_LIMIT
 from util.h2client.constants import H2CLIENT_CONNECTIONS_PER_SOURCE_IP
 
 from .common import (
@@ -25,9 +27,9 @@ from .types import ValidationResult
 
 @dataclass(slots=True)
 class RuntimeOptions:
-    interval: int = 1000
+    interval: int = DEFAULT_REQUEST_INTERVAL
     outer_interval: int = 0
-    create_retry_limit: int = 20
+    create_retry_limit: int = DEFAULT_CREATE_RETRY_LIMIT
     create_request_batch_size: int = 3
     create_request_proxy_strategy: str = "standard"
     h2_connections_per_source_ip: int = H2CLIENT_CONNECTIONS_PER_SOURCE_IP
@@ -130,7 +132,7 @@ def normalize_time_start(value: Any) -> str:
 
 def normalize_interval(value: Any) -> int:
     if value in (None, ""):
-        return 1000
+        return DEFAULT_REQUEST_INTERVAL
     if isinstance(value, bool):
         raise ValueError("interval must be a positive duration")
     if isinstance(value, int):
@@ -144,7 +146,7 @@ def normalize_interval(value: Any) -> int:
 
     text = str(value).strip().lower()
     if not text:
-        return 1000
+        return DEFAULT_REQUEST_INTERVAL
     if text.isdigit():
         parsed = int(text)
         if parsed <= 0:
@@ -302,9 +304,9 @@ def generate_ticket_config(
 
 def build_runtime_options(
     *,
-    interval: int = 1000,
+    interval: int = DEFAULT_REQUEST_INTERVAL,
     outer_interval: int = 0,
-    create_retry_limit: int = 20,
+    create_retry_limit: int = DEFAULT_CREATE_RETRY_LIMIT,
     create_request_batch_size: int = 3,
     create_request_proxy_strategy: str = "standard",
     h2_connections_per_source_ip: int = H2CLIENT_CONNECTIONS_PER_SOURCE_IP,
@@ -345,7 +347,7 @@ def build_runtime_options(
         outer_interval=normalize_non_negative_interval(outer_interval, default=0),
         create_retry_limit=normalize_positive_int(
             create_retry_limit,
-            default=20,
+            default=DEFAULT_CREATE_RETRY_LIMIT,
         ),
         create_request_batch_size=normalize_positive_int(
             create_request_batch_size,

@@ -906,3 +906,20 @@ class ProxyPoolCreateV2FanoutJA3H2Client(_CreateV2FanoutJA3H2Client):
                 wait=wait_for_futures,
                 cancel_futures=not wait_for_futures,
             )
+
+
+class RotatingIPJA3H2Client(_SourcePoolJA3H2Client):
+    """Use addresses discovered on local interfaces with the shared connection pool."""
+
+    def __init__(self, *, interface_aliases=None, source_ip_provider=None, **kwargs):
+        from .local_sources import discover_interface_source_ips
+
+        super().__init__(
+            source_ip_provider=source_ip_provider
+            or (lambda: discover_interface_source_ips(interface_aliases)),
+            **kwargs,
+        )
+
+
+class CreateV2FanoutJA3H2Client(_CreateV2FanoutJA3H2Client, RotatingIPJA3H2Client):
+    """Send create requests through the discovered local addresses."""

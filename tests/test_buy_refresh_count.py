@@ -9,8 +9,8 @@
 
 import random
 
-
 from app_cmd.config.BuyConfig import BuyConfig
+from util.Constant import DEFAULT_RATE_LIMIT_DELAY_MS
 
 
 def _make_scheduler(config: BuyConfig):
@@ -133,4 +133,4 @@ def test_default_config_values():
     cfg = BuyConfig()
     assert cfg.refresh_interval_min_count == 10
     assert cfg.refresh_interval_max_count == 30
-    assert cfg.rate_limit_delay_ms == 100
+    assert cfg.rate_limit_delay_ms == DEFAULT_RATE_LIMIT_DELAY_MS

@@ -1,3 +1,4 @@
+
 <div align="center">
   <a href="https://github.com/mikumifa/biliTickerBuy" target="_blank">
     <img width="160" src="assets/icon.ico" alt="logo">
@@ -28,6 +29,10 @@
 
 </div>
 
+## 提示
+
+此项目为biliTickerBuy的fork，旨在使用并行化技术提升请求效率
+
 ## 💻 快速安装
 
 请查看完整的 [安装指南](./docs/installation.md)。
@@ -35,6 +40,10 @@
 ## 👀 使用说明书
 
 前往飞书： https://n1x87b5cqay.feishu.cn/wiki/Eg4xwt3Dbiah02k1WqOcVk2YnMd
+
+## macOS IPv6 地址配置
+
+[macOS IPv6 地址配置与使用](./docs/pr-h2-ipv6-ticket-flow.md)：添加地址、测试连接、启动程序和删除地址。
 
 ## ❗ 项目问题
 

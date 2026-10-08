@@ -29,3 +29,13 @@ dev
 local_overrides/
 test.py
 !app_cmd/config
+
+# Local runtime files
+/btb_logs/
+/cookies.json.bak
+/.env
+/.env.local
+/.env.*.local
+/wifi-ipv6-aliases.tsv
+*.pcap
+*.pcapng

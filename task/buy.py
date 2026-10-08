@@ -64,6 +64,48 @@ from util.request.exceptions import BiliConnectionError, BiliRateLimitError
 LOCAL_FANOUT_PROXY_STRATEGY = "local_fanout"
 
 
+def _build_buy_request(config: BuyConfig, cookies) -> BiliRequest:
+    h2_client_type = None
+    h2_client_options = None
+    if config.create_request_proxy_strategy == LOCAL_FANOUT_PROXY_STRATEGY:
+        from util.h2client.ja_h2_client import ProxyPoolCreateV2FanoutJA3H2Client
+
+        proxy_pool = ProxyManager.parse_proxy_list(config.https_proxys)
+        if not proxy_pool:
+            proxy_pool = ["none"]
+        try:
+            h2_connections_per_source_ip = max(
+                1,
+                int(config.h2_connections_per_source_ip),
+            )
+        except (TypeError, ValueError):
+            h2_connections_per_source_ip = H2CLIENT_CONNECTIONS_PER_SOURCE_IP
+        h2_client_type = ProxyPoolCreateV2FanoutJA3H2Client
+        h2_client_options = {
+            "proxy_pool": proxy_pool,
+            "connections_per_source_ip": h2_connections_per_source_ip,
+        }
+    elif config.create_request_proxy_strategy == "local_ipv6":
+        from util.h2client.ja_h2_client import CreateV2FanoutJA3H2Client
+
+        h2_client_type = CreateV2FanoutJA3H2Client
+        h2_client_options = {
+            "connections_per_source_ip": max(
+                1, int(config.h2_connections_per_source_ip)
+            ),
+        }
+    return BiliRequest(
+        cookies=cookies,
+        proxy="none"
+        if config.create_request_proxy_strategy == "local_ipv6"
+        else config.https_proxys,
+        proxy_failure_threshold=config.proxy_max_consecutive_failures,
+        proxy_cooldown_seconds=config.proxy_cooldown_seconds,
+        h2_client_type=h2_client_type,
+        h2_client_options=h2_client_options,
+    )
+
+
 @dataclass(slots=True)
 class Buy:
     config: BuyConfig
@@ -327,7 +369,10 @@ def buy_stream(config: BuyConfig):
         attempt: int | None = None,
     ):
         def replenish_proxy_pool():
-            if not str(config.proxy_api_url or "").strip():
+            if (
+                config.create_request_proxy_strategy == "local_ipv6"
+                or not str(config.proxy_api_url or "").strip()
+            ):
                 return False, None
             try:
                 request_count = int(config.proxy_api_request_count or 0)
@@ -464,36 +509,13 @@ def buy_stream(config: BuyConfig):
     tickets_info["_prepare_buyer_info"] = copy.deepcopy(tickets_info["buyer_info"])
     tickets_info["buyer_info"] = json.dumps(tickets_info["buyer_info"])
     tickets_info["deliver_info"] = json.dumps(tickets_info["deliver_info"])
-    masked_proxies = ProxyManager.mask_proxy_string(config.https_proxys)
-    logger.info(f"目前已配置代理：{masked_proxies or '直连'}")
-    h2_client_type = None
-    h2_client_options = None
-    if config.create_request_proxy_strategy == LOCAL_FANOUT_PROXY_STRATEGY:
-        from util.h2client.ja_h2_client import ProxyPoolCreateV2FanoutJA3H2Client
-
-        proxy_pool = ProxyManager.parse_proxy_list(config.https_proxys)
-        if not proxy_pool:
-            proxy_pool = ["none"]
-        try:
-            h2_connections_per_source_ip = max(
-                1,
-                int(config.h2_connections_per_source_ip),
-            )
-        except (TypeError, ValueError):
-            h2_connections_per_source_ip = H2CLIENT_CONNECTIONS_PER_SOURCE_IP
-        h2_client_type = ProxyPoolCreateV2FanoutJA3H2Client
-        h2_client_options = {
-            "proxy_pool": proxy_pool,
-            "connections_per_source_ip": h2_connections_per_source_ip,
-        }
-    _request = BiliRequest(
-        cookies=cookies,
-        proxy=config.https_proxys,
-        proxy_failure_threshold=config.proxy_max_consecutive_failures,
-        proxy_cooldown_seconds=config.proxy_cooldown_seconds,
-        h2_client_type=h2_client_type,
-        h2_client_options=h2_client_options,
+    masked_proxies = ProxyManager.mask_proxy_string(
+        "none"
+        if config.create_request_proxy_strategy == "local_ipv6"
+        else config.https_proxys
     )
+    logger.info(f"目前已配置代理：{masked_proxies or '直连'}")
+    _request = _build_buy_request(config, cookies)
     proxy_backoff = ProxyBackoff(max_seconds=config.proxy_backoff_max_seconds)
     is_hot_project = bool(tickets_info.get("is_hot_project", False))
     # use_local_token = bool(config.use_local_token)
@@ -716,7 +738,7 @@ def buy_stream(config: BuyConfig):
                     if not isRunning:
                         yield emit("status", "抢票结束")
                         break
-                    should_sleep_before_next_attempt = False
+                    # should_sleep_before_next_attempt = False
                     try:
                         create_response = _request.post(
                             url=url,
@@ -727,7 +749,7 @@ def buy_stream(config: BuyConfig):
                         proxy_backoff.reset()
                         err = int(ret.get("errno", ret.get("code")))
                         retry_outcome.set_response(err, ret)
-                        _request.handle_100001(err)
+                        # _request.handle_100001(err)
                         if _is_create_success(ret, err):
                             yield emit(
                                 "success",
@@ -778,7 +800,7 @@ def buy_stream(config: BuyConfig):
                                 ),
                             )
                             tickets_info["pay_money"] = ret["data"]["pay_money"]
-                        should_sleep_before_next_attempt = True
+                        # should_sleep_before_next_attempt = True
                     except JSONDecodeError as exc:
                         handled_412 = yield from handle_non_json_response(
                             "创建订单接口",
@@ -801,9 +823,10 @@ def buy_stream(config: BuyConfig):
                                 attempt_total=effective_retry_limit,
                             ),
                         )
-                        if rate_limit_delay_ms > 0:
-                            time.sleep(rate_limit_delay_ms / 1000)
-                        continue  # 不需要sleep
+                        # if rate_limit_delay_ms > 0:
+                        #    time.sleep(rate_limit_delay_ms / 1000)
+                        # continue  # 不需要sleep
+                        # 即使风控也不会有更快的请求速度了，所以走默认值（1000ms）
                     except RequestException as e:
                         retry_outcome.set_exception(e)
                         for message in handle_proxy_failure(
@@ -848,8 +871,9 @@ def buy_stream(config: BuyConfig):
                             except Exception as exc:
                                 logger.warning(f"循环内项目详情复检失败（忽略）：{exc}")
                             _reset_refresh_counter()
-                    if should_sleep_before_next_attempt:
-                        time.sleep(request_interval / 1000)
+                    # if should_sleep_before_next_attempt:
+                    # 我们将会在新client中并行多个create请求，此时已经吃满412盾窗口，因此不再快速重试
+                    time.sleep(request_interval / 1000)
 
                 if (
                     result is not None
